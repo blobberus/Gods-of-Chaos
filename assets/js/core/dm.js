@@ -1,0 +1,564 @@
+// DM mode: content only the DM sees until it is released (docs/dm-mode.md).
+//
+// The repo is public and every player holds the same GitHub token, so "hidden" means encrypted (dm-crypto.js).
+//   content/dm/vault.json          the data key, wrapped by the DM password (set up once from the DM button)
+//   content/dm/hidden/<rid>.json   one sealed envelope per hidden item: {path, text | bin, size, mime, sha, hiddenAt, by}
+//   content/dm/hidden/<rid>.bin    a hidden binary (library file, image): IV + ciphertext
+//   content/dm/released.json       what the DM released (plain: released items are public anyway)
+//   content/dm/party.json          the party view's notes (sealed; DM-only, never released: readSealed/writeSealed)
+//   content/inbox/<stamp>.json     one notification per release, shown in everyone's Inbox
+// While DM mode is unlocked, store.layer shows each hidden item at its own path, so every tab lists it where it was
+// made; edits to it are re-encrypted (a moment later) instead of written in the clear. New items are hidden when the
+// tab that creates them passes {hidden: true} (dmNewHidden() is the default for the toggles), and a copy of a hidden
+// item (a move or rename) stays hidden. Release writes the plain file back to its path (and the hidden files it
+// names, e.g. a quest's image), removes the envelope, logs it and posts a notification.
+import { store, isTextPath, mimeOf } from './store.js';
+import { b64encode, b64decode, extOf } from './util.js';
+import { getSetting } from './settings.js';
+import { createDmVault, rewrapDmVault, openDmVault, importDataKey, sealJson, openJson, sealBytes, openBytes, sha256Hex, randomId } from './dm-crypto.js';
+
+export const DM_DIR = 'content/dm';
+export const DM_VAULT = `${DM_DIR}/vault.json`;
+export const HIDDEN_DIR = `${DM_DIR}/hidden`;
+export const RELEASED_PATH = `${DM_DIR}/released.json`;
+export const INBOX_DIR = 'content/inbox';
+export const DM_PARTY = `${DM_DIR}/party.json`; // the party view's notes and roster (sealed, never released)
+const KEY_STORE = 'goc:dm';
+const PREFS = 'goc:dm:prefs';
+const INBOX_KEEP_DAYS = 30;
+const RELEASED_KEEP = 300;
+
+const S = { key: null, raw: null, items: new Map(), listeners: new Set(), recent: [], loading: null, busy: new Set() };
+const kinds = []; // {prefix, label, icon, describe(path, data) -> {title, href}}
+
+// ---------- what can be hidden ----------
+
+/**
+ * Tabs describe their hideable items (DM Screen lists, released log, notifications):
+ * registerHideable({prefix: 'content/quests/', label: 'Quest', icon: 'quests', describe(path, data) -> {title, href}})
+ * Optional: companions(path) -> [paths] hidden along with the item (a map's places, image and sub-maps) and released
+ * with it; releaseBlock(path, data) -> a reason it can't be released on its own (a place on a hidden map), or null;
+ * releaseAs(path, data) -> {title, question, okLabel, data} when it can only be released in another form, after the
+ * DM confirms the question (a map inside a hidden map: as a map of its own), or null; afterHide(path) /
+ * afterRelease(path): called once it is hidden / released (the main map's public "hidden" marker);
+ * releaseChoices(path, data) -> [paths] the DM picks from when releasing it (a map's places: those that would come
+ * along, ticked, and those hidden on their own, not), with choiceNoun: [one, many] ('place', 'places').
+ */
+export function registerHideable(def) {
+  const i = kinds.findIndex((k) => k.prefix === def.prefix);
+  if (i >= 0) kinds.splice(i, 1, def); else kinds.push(def);
+  kinds.sort((a, b) => b.prefix.length - a.prefix.length);
+}
+const kindOf = (path) => kinds.find((k) => path.startsWith(k.prefix)) || null;
+// Uploaded images travel with the item that names them (released with it); not offered on their own in "Hide".
+registerHideable({ prefix: 'content/media/', label: 'Image', icon: 'image', order: 90, pickable: false });
+export const hideableKinds = () => [...kinds].sort((a, b) => (a.order ?? 50) - (b.order ?? 50));
+/** Can this path be hidden? (A registered area whose accept() takes it: notes yes, folder metadata or a README no.) */
+export function isHideablePath(path) {
+  const k = kindOf(path);
+  return !!k && (!k.accept || k.accept(path)) && !path.startsWith(`${DM_DIR}/`) && !path.startsWith(`${INBOX_DIR}/`);
+}
+
+/** {kind, label, icon, title, href} of a path (hidden or not). */
+export function describe(path, data = undefined) {
+  const k = kindOf(path);
+  const d = data === undefined ? store.get(path) : data;
+  let info = null;
+  try { info = k?.describe?.(path, d) || null; } catch (e) { console.warn('[dm] describe failed', e); }
+  const file = path.split('/').pop();
+  return { kind: k?.prefix || '', label: k?.label || 'File', icon: k?.icon || 'file', title: info?.title || file.replace(/\.[^.]+$/, ''), href: info?.href || null };
+}
+
+// ---------- state ----------
+
+export const dmConfigured = () => store.has(DM_VAULT);
+export const isDm = () => !!S.key;
+export const isHidden = (path) => !!path && S.items.has(path);
+/** Is this item being hidden or released right now? (Its switch stays disabled meanwhile.) */
+export const dmBusy = (path) => S.busy.has(path);
+export const onDm = (fn) => { S.listeners.add(fn); return () => S.listeners.delete(fn); };
+const notify = () => { for (const fn of S.listeners) { try { fn(); } catch (e) { console.error(e); } } };
+const modeListeners = new Set();
+/** fn(on) when DM mode turns on or off on this device (tabs redraw their switches and lock marks). */
+export const onDmMode = (fn) => { modeListeners.add(fn); return () => modeListeners.delete(fn); };
+const notifyMode = () => { for (const fn of modeListeners) { try { fn(isDm()); } catch (e) { console.error(e); } } };
+
+function prefs() { try { return { newHidden: true, ...JSON.parse(localStorage.getItem(PREFS) || '{}') }; } catch { return { newHidden: true }; } }
+/** The default of the "hidden from players" toggle when the DM creates something (DM Screen setting). */
+export const dmNewHidden = () => isDm() && prefs().newHidden !== false;
+export function setDmNewHidden(on) {
+  try { localStorage.setItem(PREFS, JSON.stringify({ ...prefs(), newHidden: !!on })); } catch { /* private mode */ }
+  notify();
+}
+
+const parseText = (path, text) => {
+  if (extOf(path) !== 'json') return text;
+  try { return JSON.parse(text); } catch { return null; }
+};
+const byWho = () => getSetting('playerName') || 'The DM';
+
+// ---------- unlocking ----------
+
+/** First time: choose the DM password. Writes content/dm/vault.json (commit it right away) and unlocks. */
+export async function setupDm(password, { remember = false } = {}) {
+  if (dmConfigured()) throw new Error('already-set-up');
+  const { vault, raw } = await createDmVault(password);
+  store.put(DM_VAULT, vault);
+  await unlockWith(raw, remember);
+}
+
+/** Unlock with the DM password; throws Error('bad-password'). */
+export async function unlockDm(password, { remember = false } = {}) {
+  const vault = store.get(DM_VAULT);
+  if (!vault) throw new Error('not-set-up');
+  const raw = await openDmVault(vault, password);
+  await unlockWith(raw, remember);
+}
+
+/** New DM password for the same key (DM mode must be on). */
+export async function changeDmPassword(password) {
+  if (!S.raw) throw new Error('locked');
+  store.put(DM_VAULT, await rewrapDmVault(S.raw, password));
+}
+
+/** After boot: DM mode stays on in this tab (or on this device, when remembered). */
+export async function restoreDm() {
+  const s = sessionStorage.getItem(KEY_STORE) || localStorage.getItem(KEY_STORE);
+  if (!s || !dmConfigured()) return false;
+  try { await unlockWith(b64decode(s), !!localStorage.getItem(KEY_STORE)); return true; } catch (e) { console.warn('[dm] could not restore DM mode', e); lockDm(); return false; }
+}
+
+async function unlockWith(raw, remember) {
+  S.key = await importDataKey(raw);
+  S.raw = raw;
+  const s = b64encode(raw);
+  sessionStorage.setItem(KEY_STORE, s);
+  if (remember) localStorage.setItem(KEY_STORE, s); else localStorage.removeItem(KEY_STORE);
+  await reloadHidden();
+  store.layer = layer;
+  document.body.classList.add('is-dm');
+  store.emit({ type: 'pulled', paths: [...S.items.keys()] });
+  notify();
+  notifyMode();
+}
+
+/** Leave DM mode on this device: hidden items disappear from view (pending edits are sealed first). */
+export async function lockDm() {
+  await flushAll();
+  const paths = [...S.items.keys()];
+  S.key = null;
+  S.raw = null;
+  S.items.clear();
+  store.layer = null;
+  sessionStorage.removeItem(KEY_STORE);
+  localStorage.removeItem(KEY_STORE);
+  document.body.classList.remove('is-dm');
+  if (paths.length) store.emit({ type: 'pulled', paths });
+  notify();
+  notifyMode();
+}
+
+/** Decrypt every envelope (again); returns the item paths that changed. */
+async function reloadHidden() {
+  if (!S.key) return [];
+  const envs = store.list(HIDDEN_DIR).filter((x) => x.path.endsWith('.json'));
+  const seen = new Set();
+  const changed = [];
+  for (const { path: env, data } of envs) {
+    seen.add(env);
+    const text = JSON.stringify(data);
+    const known = [...S.items.values()].find((it) => it.env === env);
+    if (known && (known.envText === text || known.pending)) continue;
+    try {
+      const meta = await openJson(S.key, data);
+      if (!meta?.path) continue;
+      if (known && known.path !== meta.path) S.items.delete(known.path);
+      S.items.set(meta.path, {
+        ...meta, env, envText: text, data: meta.text != null ? parseText(meta.path, meta.text) : null,
+        ver: (S.items.get(meta.path)?.ver || 0) + 1, pending: false,
+      });
+      changed.push(meta.path);
+    } catch (e) {
+      console.warn(`[dm] could not open ${env}`, e);
+    }
+  }
+  for (const [p, it] of S.items) if (!seen.has(it.env) && !it.pending && !store.isDirty(it.env)) { it.dead = true; S.items.delete(p); changed.push(p); }
+  return changed;
+}
+
+// Envelopes changed on another device (pull) or by a save: refresh what the tabs show.
+store.on(async (ev) => {
+  if (!S.key || !['pulled', 'load', 'saved'].includes(ev.type)) return;
+  const paths = ev.path ? [ev.path] : ev.paths || [];
+  if (ev.type !== 'load' && !paths.some((p) => p.startsWith(`${HIDDEN_DIR}/`))) return;
+  const changed = await reloadHidden();
+  if (changed.length) { store.emit({ type: 'pulled', paths: changed }); notify(); }
+});
+
+// ---------- sealing ----------
+
+function newItem(path) {
+  return { path, env: `${HIDDEN_DIR}/${randomId()}.json`, hiddenAt: new Date().toISOString(), by: byWho(), ver: 0, pending: false };
+}
+
+// it.dead: released or deleted. A seal still encrypting at that moment must not write the envelope back, or the item
+// would be hidden again (and listed both as hidden and as released).
+async function seal(it) {
+  const meta = { v: 1, path: it.path, size: it.size || 0, mime: it.mime || mimeOf(it.path), sha: it.sha || null, hiddenAt: it.hiddenAt, by: it.by };
+  if (it.with?.length) meta.with = it.with; // hidden together with it (companions), released with it
+  if (it.bin) meta.bin = it.bin; else meta.text = it.text ?? '';
+  it.sealing = (async () => {
+    const env = await sealJson(S.key, meta);
+    if (it.dead) return;
+    store.put(it.env, env);
+    it.envText = JSON.stringify(env);
+  })();
+  try { await it.sealing; } finally { it.sealing = null; }
+}
+
+function schedule(it) {
+  it.pending = true;
+  clearTimeout(it.timer);
+  it.timer = setTimeout(() => flush(it).catch((e) => console.error('[dm] seal failed', e)), 250);
+}
+async function flush(it) {
+  clearTimeout(it.timer);
+  if (it.sealing) await it.sealing; // one already encrypting: let it land first
+  if (!it.pending || !S.key) return;
+  it.pending = false;
+  await seal(it);
+}
+async function flushAll() { await Promise.all([...S.items.values()].map((it) => flush(it))); }
+
+/** Decrypted bytes of a hidden binary (or the text of a hidden doc). */
+async function plainBytes(it, { onProgress = null } = {}) {
+  if (!it.bin) return new TextEncoder().encode(it.text ?? '');
+  const blob = await store.fileBlob(it.bin, { onProgress });
+  if (!blob) return null;
+  return openBytes(S.key, new Uint8Array(await blob.arrayBuffer()));
+}
+
+// ---------- the store layer (used by store.js while DM mode is on) ----------
+
+const layer = {
+  has: (p) => S.items.has(p),
+  doc(p) { const it = S.items.get(p); return it && !it.bin ? it : null; },
+  docsIn(pre, recursive) {
+    const out = [];
+    for (const it of S.items.values()) {
+      if (it.bin || it.data == null || !it.path.startsWith(pre)) continue;
+      if (!recursive && it.path.slice(pre.length).includes('/')) continue;
+      out.push({ path: it.path, data: structuredClone(it.data) });
+    }
+    return out;
+  },
+  filesIn(prefix) {
+    return [...S.items.values()].filter((it) => it.path.startsWith(prefix))
+      .map((it) => ({ path: it.path, size: it.size || (it.text ? it.text.length : 0), sha: null, staged: layer.isDirty(it.path), hidden: true }));
+  },
+  text(p) { return S.items.get(p)?.text ?? null; },
+  version(p) { return S.items.get(p)?.ver ?? 0; },
+  async blob(p, opts = {}) {
+    const it = S.items.get(p);
+    if (!it) return null;
+    const bytes = await plainBytes(it, opts);
+    return bytes ? new Blob([bytes], { type: it.mime || mimeOf(p) }) : null;
+  },
+  /** The sealed file holding a hidden binary (null for a hidden document: it lives in its envelope). */
+  source: (p) => S.items.get(p)?.bin || null,
+  put(p, text, data) {
+    let it = S.items.get(p);
+    if (!it) { it = newItem(p); S.items.set(p, it); }
+    Object.assign(it, { text, data, size: text.length, bin: undefined, sha: null, ver: it.ver + 1 });
+    schedule(it);
+    notify();
+  },
+  async putBinary(p, blob) {
+    let it = S.items.get(p);
+    if (!it) { it = newItem(p); S.items.set(p, it); }
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    it.bin = it.bin || it.env.replace(/\.json$/, '.bin');
+    Object.assign(it, { text: undefined, data: null, size: bytes.length, mime: blob.type || mimeOf(p), sha: await sha256Hex(bytes), ver: it.ver + 1 });
+    await store.putBinary(it.bin, new Blob([await sealBytes(S.key, bytes)], { type: 'application/octet-stream' }));
+    it.pending = true;
+    await flush(it);
+    notify();
+  },
+  remove(p) {
+    const it = S.items.get(p);
+    if (!it) return;
+    clearTimeout(it.timer);
+    it.dead = true;
+    S.items.delete(p);
+    S.recent = [...S.recent.filter((r) => Date.now() - r.at < 5000), { at: Date.now(), text: it.text, sha: it.sha, size: it.size }];
+    store.remove(it.env);
+    if (it.bin) store.remove(it.bin);
+    notify();
+  },
+  isDirty(p) { const it = S.items.get(p); return !!it && (it.pending || store.isDirty(it.env) || (!!it.bin && store.isDirty(it.bin))); },
+  /** Edits still waiting for their envelope? store.save seals them (flush) before it commits. */
+  pending: () => [...S.items.values()].some((it) => it.pending),
+  flush: () => flushAll(),
+  /** Safety net: something new in a hideable area while "New: hidden" is on (tabs normally say so themselves). */
+  autoHide: (p) => dmNewHidden() && isHideablePath(p),
+  /** A new text file identical to a hidden one (or one just removed): a move or a copy, so it stays hidden. */
+  isCopy(text) {
+    if (text == null) return false;
+    return [...S.items.values()].some((it) => !it.bin && it.text === text) || S.recent.some((r) => r.text === text && Date.now() - r.at < 5000);
+  },
+  async isCopyBytes(blob) {
+    const size = blob.size;
+    const cands = [...S.items.values(), ...S.recent].filter((x) => x.sha && x.size === size);
+    if (!cands.length) return false;
+    const sha = await sha256Hex(new Uint8Array(await blob.arrayBuffer()));
+    return cands.some((x) => x.sha === sha);
+  },
+};
+
+// ---------- DM-only documents ----------
+
+/**
+ * A document only the DM ever reads (the party view's notes): sealed with the DM data key at its own path under
+ * content/dm/ (outside the hidden layer, so it is never listed or released). -> value, or null (none yet, locked).
+ */
+export async function readSealed(path) {
+  if (!S.key) return null;
+  const env = store.get(path);
+  if (!env?.iv || !env?.data) return null;
+  try { return await openJson(S.key, env); } catch (e) { console.warn(`[dm] could not open ${path}`, e); return null; }
+}
+
+export async function writeSealed(path, value) {
+  if (!S.key) throw new Error('DM mode is locked.');
+  store.put(path, await sealJson(S.key, value));
+}
+
+// ---------- hide / release ----------
+
+/** Hidden items for the DM Screen: [{path, hiddenAt, by, …describe()}] newest first. */
+export function hiddenItems() {
+  return [...S.items.values()].map((it) => ({ path: it.path, hiddenAt: it.hiddenAt, by: it.by, dirty: layer.isDirty(it.path), ...describe(it.path, it.data) }))
+    .sort((a, b) => String(b.hiddenAt).localeCompare(String(a.hiddenAt)));
+}
+
+/** The released log: [{path, title, label, href, at, by}] newest first. */
+export function releasedItems() {
+  const log = store.get(RELEASED_PATH);
+  return (Array.isArray(log?.items) ? log.items : []).filter((x) => x && x.path).sort((a, b) => String(b.at).localeCompare(String(a.at)));
+}
+/** Is this item on the released log? (A released journal note's links to nothing say "not revealed yet".) */
+export const isReleased = (path) => !!path && releasedItems().some((x) => x.path === path);
+function setReleased(list) {
+  store.put(RELEASED_PATH, { items: list.slice(0, RELEASED_KEEP) });
+}
+
+/** The Inbox notifications that announced this item: [{path, data}]. */
+export const notificationsOf = (path) => store.list(INBOX_DIR).filter((x) => x.data?.path === path);
+
+/**
+ * Take an item off the released log (the DM Screen's Released list); with inbox, its notifications leave the players'
+ * Inbox too. The item itself stays where it was released, visible to everyone. -> number of notifications removed.
+ */
+export function forgetReleased(path, { inbox = false } = {}) {
+  if (!S.key) throw new Error('DM mode is locked.');
+  setReleased(releasedItems().filter((x) => x.path !== path));
+  const notes = inbox ? notificationsOf(path) : [];
+  for (const n of notes) store.remove(n.path);
+  notify();
+  return notes.length;
+}
+
+/**
+ * Hide an existing (public) item: seal it, then delete the plain file (earlier versions stay in the git history).
+ * Uploaded images it names (content/media/…) go with it, unless another visible document names them too, and so do
+ * its companions (registerHideable), which are released with it.
+ */
+export async function hideItem(path, opts = {}) {
+  if (!S.key) throw new Error('locked');
+  if (S.items.has(path)) return;
+  if (S.busy.has(path)) throw new Error('busy');
+  S.busy.add(path);
+  try { await hideNow(path, opts); } finally { S.busy.delete(path); }
+}
+
+async function hideNow(path, { withAttachments = true } = {}) {
+  const companions = [];
+  const kind = kindOf(path);
+  if (kind?.companions) {
+    let list = [];
+    try { list = (await kind.companions(path)) || []; } catch (e) { console.warn('[dm] companions failed', e); }
+    let failed = null;
+    for (const p of list) {
+      if (!p || p === path || S.items.has(p)) continue; // already hidden on its own: it stays hidden after a release
+      try { await hideItem(p); companions.push(p); } catch (e) { if (e.message !== 'missing') { failed = e; break; } }
+    }
+    if (failed) { // all or nothing: what was hidden for it goes back, and the DM is told (nothing left half public)
+      for (const p of companions.reverse()) await releaseItem(p, { announce: false, attachment: true }).catch(() => {});
+      throw new Error(`part of it could not be hidden (${failed.message || failed}). Nothing was hidden; try again.`);
+    }
+  }
+  if (withAttachments && isTextPath(path)) {
+    const text = (await store.text(path)) || '';
+    const named = store.files('content/media/').filter((f) => !f.hidden && text.includes(f.path));
+    // only then the (costly) look at every other visible document: a map's places, hidden with it, name no images
+    const others = named.length ? store.list('content', { recursive: true })
+      .filter((d) => d.path !== path && !S.items.has(d.path) && !d.path.startsWith(`${DM_DIR}/`) && !d.path.startsWith(`${INBOX_DIR}/`))
+      .map((d) => JSON.stringify(d.data)) : [];
+    for (const f of named) {
+      if (others.some((t) => t.includes(f.path))) continue;
+      await hideItem(f.path, { withAttachments: false });
+    }
+  }
+  const it = newItem(path);
+  if (companions.length) it.with = companions;
+  if (isTextPath(path)) {
+    const text = await store.text(path);
+    if (text == null) throw new Error('missing');
+    Object.assign(it, { text, data: parseText(path, text), size: text.length });
+  } else {
+    const blob = await store.fileBlob(path);
+    if (!blob) throw new Error('missing');
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    it.bin = it.env.replace(/\.json$/, '.bin');
+    Object.assign(it, { size: bytes.length, mime: blob.type || mimeOf(path), sha: await sha256Hex(bytes) });
+    await store.putBinary(it.bin, new Blob([await sealBytes(S.key, bytes)], { type: 'application/octet-stream' }));
+  }
+  await seal(it);
+  store.remove(path); // the plain file (still a normal path: the layer doesn't hold it yet)
+  S.items.set(path, it);
+  setReleased(releasedItems().filter((x) => x.path !== path));
+  store.emit({ type: 'put', path });
+  try { kind?.afterHide?.(path); } catch (e) { console.warn('[dm] afterHide failed', e); }
+  notify();
+}
+
+/**
+ * How Release would go for a hidden item (asked before the DM confirms): {blocked: why it can't be released on its
+ * own, or null; title, question, okLabel: it can only be released in another form (a map inside a hidden map: as a
+ * map of its own) once the DM agrees: pass {as: true} to releaseItem; else null}.
+ */
+export function releasePlan(path) {
+  const it = S.items.get(path);
+  const k = kindOf(path);
+  const none = { blocked: null, title: null, question: null, okLabel: null };
+  if (!it || !k) return none;
+  let blocked = null;
+  let alt = null;
+  try { blocked = k.releaseBlock?.(path, it.data) || null; } catch (e) { console.warn('[dm] releaseBlock failed', e); }
+  if (!blocked) try { alt = k.releaseAs?.(path, it.data) || null; } catch (e) { console.warn('[dm] releaseAs failed', e); }
+  return { ...none, blocked, title: alt?.title || null, question: alt?.question || null, okLabel: alt?.okLabel || null };
+}
+
+/**
+ * What the DM may pick from when releasing a hidden item (registerHideable releaseChoices: a map's hidden places).
+ * -> {items: [{path, title, label, href, along}], one, many}; along: it would be released with the item anyway (hidden
+ * with it, or added while it was hidden), else it was hidden on its own and stays hidden unless picked.
+ */
+export function releaseChoices(path) {
+  const it = S.items.get(path);
+  const k = kindOf(path);
+  const [one, many] = k?.choiceNoun || ['item', 'items'];
+  if (!it || !k?.releaseChoices) return { items: [], one, many };
+  let list = [];
+  try { list = k.releaseChoices(path, it.data) || []; } catch (e) { console.warn('[dm] releaseChoices failed', e); }
+  const withIt = new Set(it.with || []);
+  const items = [...new Set(list)].filter((p) => p !== path && S.items.has(p)).map((p) => ({
+    path: p, ...describe(p), along: withIt.has(p) || String(S.items.get(p).hiddenAt || '') >= String(it.hiddenAt || ''),
+  }));
+  return { items, one, many };
+}
+
+/**
+ * Release a hidden item: the plain file goes back to its path (with any hidden files whose path it names, e.g. its
+ * image), the envelope goes, it joins the released log and everyone gets a notification. opts.as: the DM agreed to
+ * release it in another form (releasePlan().question, e.g. a map inside a hidden map as a map of its own).
+ * opts.also / opts.keep (releaseChoices, the DM's picks): hidden on their own but released with it (each in the
+ * Released list, all under its one notification) / would come along but stay hidden.
+ */
+export async function releaseItem(path, opts = {}) {
+  if (!S.items.has(path) || !S.key) return null;
+  if (S.busy.has(path)) throw new Error('busy');
+  S.busy.add(path);
+  try { return await releaseNow(path, opts); } finally { S.busy.delete(path); }
+}
+
+async function releaseNow(path, { announce = true, attachment = false, as = false, also = [], keep = [] } = {}) {
+  const it = S.items.get(path);
+  if (!it) return null;
+  const kind = kindOf(path);
+  const why = attachment ? null : kind?.releaseBlock?.(path, it.data);
+  if (why) throw new Error(why);
+  const alt = attachment ? null : kind?.releaseAs?.(path, it.data) || null;
+  if (alt && !as) throw new Error(alt.question || 'It can’t be released as it is.');
+  const offered = attachment ? [] : releaseChoices(path).items.map((c) => c.path); // counted in its notification
+  await flush(it);
+  const out = alt ? alt.data : it.data; // what the players get
+  const info = describe(path, out);
+  const bytes = it.bin ? await plainBytes(it) : null;
+  if (it.bin && !bytes) throw new Error('missing');
+  it.dead = true; // a late seal must not bring the envelope back
+  S.items.delete(path); // from here on the store writes the plain file
+  if (it.bin) await store.putBinary(path, new Blob([bytes], { type: it.mime || mimeOf(path) }), { hidden: false });
+  else store.put(path, extOf(path) === 'json' && out != null ? out : it.text ?? '', { hidden: false });
+  store.remove(it.env);
+  if (it.bin) store.remove(it.bin);
+  // attachments: hidden files this one names (a quest's image, a note's photos)
+  if (it.text) for (const other of [...S.items.keys()]) if (it.text.includes(other)) await releaseItem(other, { announce: false, attachment: true });
+  const stay = new Set(keep);
+  // what is with it now: one hidden with it that has left since (a place moved to another map) stays hidden
+  let current = null;
+  if (kind?.companions) try { current = (await kind.companions(path)) || []; } catch (e) { console.warn('[dm] companions failed', e); }
+  const still = current && new Set(current);
+  for (const other of it.with || []) if (S.items.has(other) && !stay.has(other) && (!still || still.has(other))) await releaseItem(other, { announce: false, attachment: true }); // its companions
+  // and companions added (hidden) after it was hidden, e.g. places made on a hidden map; older ones were hidden on their own
+  if (current) {
+    for (const other of current) {
+      const o = S.items.get(other);
+      if (o && !stay.has(other) && String(o.hiddenAt || '') >= String(it.hiddenAt || '')) await releaseItem(other, { announce: false, attachment: true });
+    }
+  }
+  try { kind?.afterRelease?.(path); } catch (e) { console.warn('[dm] afterRelease failed', e); }
+  if (attachment) { notify(); return info; }
+  for (const other of also) {
+    if (!S.items.has(other)) continue;
+    try { await releaseItem(other, { announce: false }); } catch (e) { console.warn('[dm] could not release', other, e); }
+  }
+  const now = new Date().toISOString();
+  setReleased([{ path, title: info.title, label: info.label, href: info.href, at: now, by: byWho() }, ...releasedItems().filter((x) => x.path !== path)]);
+  const n = offered.filter((p) => !S.items.has(p)).length; // its places (say) shown with it now
+  const [one, many] = kind?.choiceNoun || ['item', 'items'];
+  if (announce) postNotification({ title: info.title, label: n ? `${info.label} and ${n} ${n === 1 ? one : many}` : info.label, href: info.href, path });
+  notify();
+  return info;
+}
+
+/**
+ * Release several hidden items under one notification, e.g. places on a visible map picked together. Each joins the
+ * Released list. note: {title, label, href} for the Inbox when there is more than one (one alone gets its own).
+ * -> how many were released. A failure stops there: what was released so far is announced, then it throws.
+ */
+export async function releaseTogether(paths, note) {
+  const infos = [];
+  let error = null;
+  for (const p of paths) {
+    if (!S.items.has(p)) continue;
+    try { const info = await releaseItem(p, { announce: false }); if (info) infos.push({ path: p, ...info }); } catch (e) { error = e; break; }
+  }
+  if (infos.length === 1) postNotification({ title: infos[0].title, label: infos[0].label, href: infos[0].href, path: infos[0].path });
+  else if (infos.length) postNotification(note);
+  if (error) throw error;
+  return infos.length;
+}
+
+// ---------- inbox ----------
+
+/** One notification for everyone's Inbox (old ones are pruned here, 30 days). */
+export function postNotification({ title, label = '', href = null, path = null }) {
+  const at = new Date().toISOString();
+  const id = `${at.replace(/[^0-9]/g, '').slice(0, 14)}-${randomId(3)}`;
+  store.put(`${INBOX_DIR}/${id}.json`, { id, at, title, label, href, path, by: byWho() });
+  const cutoff = Date.now() - INBOX_KEEP_DAYS * 864e5;
+  for (const n of store.list(INBOX_DIR)) if (Date.parse(n.data?.at) < cutoff) store.remove(n.path);
+}
+
+export const _test = { layer, items: S.items };
