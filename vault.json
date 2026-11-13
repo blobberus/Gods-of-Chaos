@@ -1,0 +1,20 @@
+{
+  "v": 1,
+  "kdf": {
+    "name": "PBKDF2",
+    "hash": "SHA-256",
+    "iterations": 600000,
+    "salt": "wK7s9mFkoymMYkjyGCd6Tg=="
+  },
+  "cipher": {
+    "name": "AES-GCM",
+    "iv": "aJY3IHCR+ZNbniJo"
+  },
+  "data": "0vfvvs3xGzeJTMPMhpawrt/2FtTYjjNO1r5/VMCtTwsNCA4PELojrQaSH+kwiUib8yP/9QLeHikjqhlMSje8uuXdf3rEwK7C3bIICmrjS5tNfIyujNB1ShLLGoH2m1VGcUqxtcaDT8vEMkejtGLf7nUB+PO5Wms+RQ==",
+  "repo": {
+    "owner": "blobberus",
+    "repo": "Gods-of-Chaos",
+    "branch": "main"
+  },
+  "created": "2026-11-13T19:02:02.086Z"
+}
