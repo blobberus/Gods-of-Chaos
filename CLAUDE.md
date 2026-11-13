@@ -4,9 +4,11 @@ Password-gated D&D 5e (**2024 rules / SRD 5.2**) campaign site on GitHub Pages f
 `blobberus/Gods-of-Chaos` (https://blobberus.github.io/Gods-of-Chaos/). Another campaign site of the owner's lives on the
 same `blobberus.github.io` origin and shares its browser storage with this one; it uses `sw:` / `sw-` keys, so this site's
 keys use `goc:` / `goc-`. Keep new keys on `goc:`, or one site's login, DM key or drafts leak into the other.
-The Combat Ring sister site (`../Combat-Ring/`) opens the other site's vault and data, not this one's. The original brief is
+The Combat Ring sister site is `blobberus/Combat-Ring-GoC` (`../Combat-Ring-GoC/`, local clone `Documents\Combat-Ring-GoC`):
+it opens this site's `vault.json` and DM vault (`content/dm/vault.json`, so one DM password for both), reads the
+party, atlas and rules engine from here, writes only under `content/combat-ring/`, and shares the `goc:auth` login. The original brief is
 `The Gods of Chaos - A Fallen Firmament Campaign(1).md`.
-Sidebar, in order: **Combat Ring** (crossed swords; opens the sister battle-table site `../Combat-Ring/` in a new tab,
+Sidebar, in order: **Combat Ring** (crossed swords; opens the sister battle-table site `../Combat-Ring-GoC/` in a new tab,
 main.js `combatRingLink`), then the tabs (main.js `VIEW_IDS`): **Map**, **Quests**, **Characters**, **Journal**, **Pantheon**, **Numen's Library** (renders
 PDFs/DOCX from `numens-library/`), **Compendium** (SRD + custom library), **DM Screen** (DM mode only); at the
 bottom **Inbox** and **Settings** (DM login lives in Settings → DM mode). The sidebar title opens the landing page.

@@ -16,7 +16,7 @@ import { configureLive, followCommits } from './core/live.js';
 // Sidebar order (DM Screen shown only in DM mode), under the Combat Ring link. core/dm-ui.js puts the Inbox at the bottom,
 // right above Settings.
 const VIEW_IDS = ['map', 'quests', 'characters', 'journal', 'pantheon', 'numens-library', 'compendium', 'dm', 'settings'];
-const COMBAT_RING = 'https://blobberus.github.io/Combat-Ring/'; // used off Pages (localhost); on Pages it is ../Combat-Ring/
+const COMBAT_RING = 'https://blobberus.github.io/Combat-Ring-GoC/'; // used off Pages (localhost); on Pages it is ../Combat-Ring-GoC/
 const isLocalhost = ['localhost', '127.0.0.1', ''].includes(location.hostname);
 
 applyTheme();
@@ -274,7 +274,7 @@ function buildSidebar() {
 
 /** Combat Ring (the battle table, a sister site on the same Pages account) opens in a new tab, first in the menu. */
 function combatRingLink(sb) {
-  const url = location.hostname.endsWith('.github.io') ? new URL('../Combat-Ring/', location.href).href : COMBAT_RING;
+  const url = location.hostname.endsWith('.github.io') ? new URL('../Combat-Ring-GoC/', location.href).href : COMBAT_RING;
   return h('a', {
     class: 'sb-tab sb-ext', href: store.mode === 'sandbox' ? `${url}?sandbox` : url, target: '_blank', rel: 'noopener',
     title: 'Combat Ring (opens in a new tab)', onclick: () => sb.classList.remove('is-open'),
