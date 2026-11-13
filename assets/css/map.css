@@ -238,7 +238,7 @@
 .map-tool-btn.map-tool-icon { width: var(--control-h); padding: 0; }
 .map-tool-btn[aria-pressed="true"]:not(.btn-primary),
 .map-tool-btn.is-filtered { background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--ink-muted), var(--shadow); }
-.map-add.btn-primary[aria-pressed="true"] { color: var(--accent-ink); background: var(--accent-hover); border-color: var(--accent-hover); }
+.map-add.btn-primary[aria-pressed="true"] { color: var(--btn-primary-ink); background: var(--btn-primary-hover); border-color: var(--btn-primary-edge); }
 .map-tool-badge {
   margin-left: 2px;
   padding: 3px 6px;

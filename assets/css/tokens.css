@@ -41,6 +41,10 @@
   --focus: #2b5f93;         /* focus ring (3:1+ on every ground) */
   --gold: #9c7419;          /* gold leaf: ornament, emblem star, map marks — never body text */
   --gold-soft: #f0e2b6;     /* ==highlight== and text selection wash */
+  --btn-primary: #d4ab45;      /* primary buttons: golden yellow, the landing title's gold leaf */
+  --btn-primary-hover: #c49b36;
+  --btn-primary-edge: #9c7419; /* = --gold: the edge that sets a gold button off the pale page (3:1) */
+  --btn-primary-ink: #14203f;  /* navy text on gold (7:1) */
 
   /* --- Status ------------------------------------------------------------- */
   --danger: #b0261d;   --danger-soft: #f6dcd6;
@@ -171,6 +175,10 @@
   --focus: #8fb6de;
   --gold: #d2a54a;
   --gold-soft: #4b3c17;
+  --btn-primary: #d6ad4a;
+  --btn-primary-hover: #e2bd62;
+  --btn-primary-edge: #d6ad4a;
+  --btn-primary-ink: #14203f;
 
   --danger: #f0857f;   --danger-soft: #3d1f1b;
   --ok: #86c49a;       --ok-soft: #1d3326;

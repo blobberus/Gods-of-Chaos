@@ -129,9 +129,9 @@ kbd, .kbd {
 @media (hover: hover) { .btn:hover { background: var(--surface-2); border-color: var(--ink-muted); color: var(--ink); } }
 .btn:active { background: var(--surface-3); }
 .btn .icon { width: 18px; height: 18px; margin-inline: -2px; }
-.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-@media (hover: hover) { .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-ink); } }
-.btn-primary:active { background: var(--accent-hover); }
+.btn-primary { background: var(--btn-primary); border-color: var(--btn-primary-edge); color: var(--btn-primary-ink); }
+@media (hover: hover) { .btn-primary:hover { background: var(--btn-primary-hover); border-color: var(--btn-primary-edge); color: var(--btn-primary-ink); } }
+.btn-primary:active { background: var(--btn-primary-hover); }
 .btn-ghost { background: transparent; border-color: transparent; color: var(--ink); }
 @media (hover: hover) { .btn-ghost:hover { background: var(--surface-2); border-color: transparent; } }
 .btn-ghost:active { background: var(--surface-3); }
@@ -157,7 +157,7 @@ kbd, .kbd {
   border: 2px solid var(--ink-muted); border-right-color: transparent; border-radius: 50%;
   animation: sw-spin 0.7s linear infinite;
 }
-.btn-primary.is-loading::after { border-color: var(--accent-ink); border-right-color: transparent; }
+.btn-primary.is-loading::after { border-color: var(--btn-primary-ink); border-right-color: transparent; }
 .spinner {
   display: inline-block; width: 18px; height: 18px; flex: none; vertical-align: -0.25em;
   border: 2px solid var(--border-strong); border-right-color: transparent; border-radius: 50%;

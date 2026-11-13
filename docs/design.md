@@ -12,7 +12,9 @@ raw hex. Theme: `<html data-theme="dark">` (light is the default). `docs/preview
   zebra rows, code and toolbars; `--surface-3` for pressed/active. `--bg-sunk` for wells and tracks.
 - Ink `--ink` for all running text. `--ink-muted` for labels and meta. `--ink-faint` for placeholders only.
 - Lines: `--border` (card edges), `--border-strong` (control edges, 3:1), `--rule` (row rules inside a surface).
-- `--accent` (rubric) has exactly three jobs: **the one primary action per screen**, **prose headings h1–h3**, and
+- The one primary action per screen is a gold button: `--btn-primary` (golden yellow fill), `-hover`, `-edge`, and
+  `-ink` (navy text).
+- `--accent` (rubric, night navy) has two jobs: **prose headings h1–h3** and
   **"you are here"** (active nav icon, active tab underline, selected row edge). `--accent-soft` is the selected-row wash.
 - `--link` (lapis) for links, wikilinks and tags. `--focus` for rings. `--gold` for ornament only (never text). `--gold-soft` = `mark`.
 - Status: `--ok --warn --danger --info`, each with a `-soft` pale pair for pills and toasts (dark text of the same hue).
