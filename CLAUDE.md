@@ -295,8 +295,9 @@ tools/build_srd.py    converts 5e-bits/5e-database src/2024/en -> srd/
   `start`) sends a URL without a route to `#/home` while localStorage `sw:home:seen` is unset; showing the page sets
   it; deep links are left alone. The poster's lettering is painted in, so home.css never distorts it or crops into it
   (container-query sizing: at most 5% off top/bottom, 3% off each side); leftover bands show the backdrop image (the
-  poster's edges extended and blurred) at the poster's scale. Links sit under the painted subtitle on large views, on
-  the grass below the poster on small ones.
+  poster's edges extended and blurred) at the poster's scale. Links sit under the painted subtitle on large views, below
+  the poster on small ones. The poster is a blank vellum placeholder (gold title, subtitle and motto only) until the
+  owner's new art arrives.
 
 ## Characters tab
 - Engine (pure, Node-testable): `engine.js` facade + `engine-{rules,choices,derive,adjust,items,known,spells,actions,prof,tags,xp,util}.js`

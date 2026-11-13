@@ -34,7 +34,7 @@ function build(el) {
         srcset: WIDTHS.map((w) => `${POSTER}-${w}.webp ${w}w`).join(', '),
         sizes: '(max-width: 759px) 100vw, calc(100vw - 232px)',
         width: 4000, height: 2700, decoding: 'async', fetchpriority: 'high',
-        alt: 'A stone statue stands alone on a green hill under a wide blue sky. The gods and destiny await.',
+        alt: 'A blank vellum page lettered Gods of Chaos in gold. The gods and destiny await.',
       }),
       h('nav', { class: 'home-start', 'aria-label': 'Begin' },
         views.has('map') ? h('a', { class: 'btn btn-primary home-enter', href: href('map') }, icon(views.get('map').icon || 'map'), h('span', null, 'Open the map')) : null,

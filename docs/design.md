@@ -2,7 +2,7 @@
 
 **Concept.** The app is a numen's codex: vellum pages in iron-gall ink, titles cut in inscriptional capitals like the
 numens' stones, and oxblood rubrics marking where each entry begins. Lapis marks cross-references, and gold leaf appears
-only where a star has fallen (the emblem, highlights, the selected pin). The night theme turns the vellum to basalt.
+only where moonlight falls (the emblem's crescent moon and star, highlights, the selected pin). The night theme turns the vellum to basalt.
 
 **Files.** Load `vendor/leaflet/leaflet.css`, `tokens.css`, `base.css`, `shell.css`, then `<view>.css`. Use tokens only, never
 raw hex. Theme: `<html data-theme="dark">` (light is the default). `docs/preview.html` shows every component (serve over http).
