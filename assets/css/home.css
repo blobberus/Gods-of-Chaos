@@ -1,10 +1,10 @@
 /* =============================================================================
    Landing page (#/home, views/home/index.js): the campaign poster
-   (assets/img/gods-of-chaos-poster-{960,1600,2560}.webp, made from References/GodsOfChaosPoster1.png, 4000 x 2700).
-   Its lettering is painted in, so the poster is never distorted and never cropped into it. Measured on the poster:
-   title 6-53% across / 11-21% down, subtitle 25-28% down, motto 90-92% down. For now the poster is a blank vellum
-   placeholder holding only that lettering (title in gold leaf) until the campaign art arrives; new art keeps the
-   lettering where it is, or these numbers are measured again.
+   (assets/img/gods-of-chaos-poster-{960,1600,2360}.webp, made from the owner's art References/Gods of Chaos home.jpg,
+   2360 x 1640 with 47 px of its flat navy sky trimmed off the top to 2360 x 1593 = 40:27; the gold title and silver
+   subtitle are laid on it, the motto is the art's own). Its lettering is painted in, so the poster is never distorted
+   and never cropped into it. Measured on the poster: title 6-53% across / 11-21% down, subtitle 25-28% down, motto
+   91-94.4% down, the moon 60-81% across / 29-54% down.
    - Large views: the poster grows to fill the view as far as the lettering allows: up to 5% of its height may fall
      off the top and off the bottom, up to 3% of its width off each side. The start links sit in the open space
      under the painted subtitle.
@@ -54,9 +54,9 @@
   mask: var(--home-feather);
   -webkit-mask-composite: source-in;
   mask-composite: intersect;
-  /* the bottom fade starts under the painted motto (which ends at 92.4%) */
+  /* the bottom fade starts under the painted motto (which ends at 94.4%) */
   --home-feather: linear-gradient(to right, transparent, black 2.5%, black 97.5%, transparent),
-                  linear-gradient(to bottom, transparent, black 4%, black 93%, transparent);
+                  linear-gradient(to bottom, transparent, black 4%, black 95%, transparent);
 }
 
 /* The way in: "Open the map" + the other tabs. Floating over imagery like the map controls: shadow, no border. */

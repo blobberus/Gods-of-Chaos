@@ -7,8 +7,8 @@ import { allViews, href } from '../../core/router.js';
 
 const SEEN_KEY = 'goc:home:seen'; // localStorage, per device: set once the landing page has been shown here
 const LINKS = ['quests', 'characters', 'journal', 'pantheon', 'numens-library', 'compendium']; // under "Open the map", sidebar order, 3 + 3
-const POSTER = 'assets/img/gods-of-chaos-poster'; // -960/-1600/-2560.webp, made from References/GodsOfChaosPoster1.png
-const WIDTHS = [960, 1600, 2560];
+const POSTER = 'assets/img/gods-of-chaos-poster'; // -960/-1600/-2360.webp, made from References/Gods of Chaos home.jpg
+const WIDTHS = [960, 1600, 2360];
 
 const seen = () => { try { return !!localStorage.getItem(SEEN_KEY); } catch { return true; } };
 
@@ -33,8 +33,8 @@ function build(el) {
         src: `${POSTER}-1600.webp`,
         srcset: WIDTHS.map((w) => `${POSTER}-${w}.webp ${w}w`).join(', '),
         sizes: '(max-width: 759px) 100vw, calc(100vw - 232px)',
-        width: 4000, height: 2700, decoding: 'async', fetchpriority: 'high',
-        alt: 'A blank vellum page lettered Gods of Chaos in gold. The gods and destiny await.',
+        width: 2360, height: 1593, decoding: 'async', fetchpriority: 'high',
+        alt: 'A cloaked figure with a sword stands on a mountain peak before a full moon in a deep blue night sky. The moon never sleeps.',
       }),
       h('nav', { class: 'home-start', 'aria-label': 'Begin' },
         views.has('map') ? h('a', { class: 'btn btn-primary home-enter', href: href('map') }, icon(views.get('map').icon || 'map'), h('span', null, 'Open the map')) : null,

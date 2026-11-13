@@ -33,7 +33,7 @@ setup.html            owner tool: encrypts a GitHub token with the site password
 vault.json            {v,kdf,cipher,data,repo} AES-GCM ciphertext of {token}; password never stored
 assets/css/           tokens.css (design tokens) base.css (components) shell.css + one css per view
 assets/img/           icons.svg (sprite, <symbol id="i-NAME">), placeholder-map.svg, gods-of-chaos-poster-{960,1600,2560}.webp
-                      + -backdrop.webp (landing page; made from References/GodsOfChaosPoster1.png, keep that original)
+                      + -backdrop.webp (landing page; made from References/Gods of Chaos home.jpg, keep that original)
 assets/js/main.js     boot: gate -> store.load -> register views -> router.start
 assets/js/core/       shared infrastructure (see contracts below) — views must not reimplement these
 assets/js/views/<v>/  one folder per tab: map, characters, journal, quests, pantheon, compendium, numens-library, settings;
@@ -299,8 +299,8 @@ tools/build_srd.py    converts 5e-bits/5e-database src/2024/en -> srd/
   it; deep links are left alone. The poster's lettering is painted in, so home.css never distorts it or crops into it
   (container-query sizing: at most 5% off top/bottom, 3% off each side); leftover bands show the backdrop image (the
   poster's edges extended and blurred) at the poster's scale. Links sit under the painted subtitle on large views, below
-  the poster on small ones. The poster is a blank vellum placeholder (gold title, subtitle and motto only) until the
-  owner's new art arrives.
+  the poster on small ones. The poster is the owner's night art (References/Gods of Chaos home.jpg) with the gold title and a silver subtitle laid
+  on; its motto is the art's own. The backdrop is made from the art without lettering.
 
 ## Characters tab
 - Engine (pure, Node-testable): `engine.js` facade + `engine-{rules,choices,derive,adjust,items,known,spells,actions,prof,tags,xp,util}.js`
