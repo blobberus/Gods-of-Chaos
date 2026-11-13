@@ -98,7 +98,7 @@ const contrast = (a, b) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 const ratio = (x, y) => contrast(luminance(x), luminance(y));
 // Ink and page ground of each theme (mirror --ink / --bg in tokens.css)
 const INK = { light: '#1f1a14', dark: '#ebe3d3' };
-const GROUND_BG = { light: '#e9e2d3', dark: '#15130f' };
+const GROUND_BG = { light: '#e1e3e4', dark: '#121316' };
 const AA = 4.5;
 
 function mix(a, b, t) { // t of a, (1 - t) of b, in sRGB

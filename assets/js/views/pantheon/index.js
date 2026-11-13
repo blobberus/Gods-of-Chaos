@@ -28,6 +28,8 @@ import * as M from './model.js';
 import { drawDiagram, rankGlyph, svgText, pngBlob, SCREEN, W } from './diagram.js';
 
 const VIEW = 'pantheon';
+// For now the tab is a blank page (owner's call, 2026-11-13): the code below stays for when it comes back; set false.
+export const BLANK = true;
 const UI_KEY = 'goc:pantheon:ui'; // per device: {view: 'original' | 'sigil', majorLines}
 const DRAFT_KEY = 'goc:pantheon:draft'; // the open editor, until it is saved or discarded
 
@@ -898,8 +900,10 @@ function onKey(e) {
 export default {
   id: VIEW,
   title: 'Pantheon',
-  icon: 'pantheon',
+  icon: 'sun',
+  blank: BLANK,
   mount(el) {
+    if (BLANK) { el.append(h('header', { class: 'view-head' }, h('h1', { class: 'view-title' }, 'Pantheon'))); return; }
     build(el);
     store.on(onStoreEvent);
     onDmMode(() => onStoreEvent({ type: 'load' }));
@@ -907,6 +911,7 @@ export default {
     restoreDraft();
   },
   show(route) {
+    if (BLANK) { document.title = 'Pantheon · The Gods of Chaos'; return; }
     S.visible = true;
     const [file = null] = route?.parts || [];
     if (!file && route?.query?.new) { navigate(href(VIEW), { replace: true }); queueMicrotask(() => addBeing([])); return; } // DM Screen "New god"
@@ -933,6 +938,6 @@ export default {
   },
   hide() {
     S.visible = false;
-    keepDraft.flush?.();
+    if (!BLANK) keepDraft.flush?.();
   },
 };

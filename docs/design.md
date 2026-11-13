@@ -1,7 +1,7 @@
 # Gods of Chaos: design system
 
 **Concept.** The app is a numen's codex: vellum pages in iron-gall ink, titles cut in inscriptional capitals like the
-numens' stones, and oxblood rubrics marking where each entry begins. Lapis marks cross-references, and gold leaf appears
+numens' stones, and night-navy rubrics marking where each entry begins. Lapis marks cross-references, and gold leaf appears
 only where moonlight falls (the emblem's crescent moon and star, highlights, the selected pin). The night theme turns the vellum to basalt.
 
 **Files.** Load `vendor/leaflet/leaflet.css`, `tokens.css`, `base.css`, `shell.css`, then `<view>.css`. Use tokens only, never

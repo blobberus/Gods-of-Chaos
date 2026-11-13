@@ -232,6 +232,9 @@ tools/build_srd.py    converts 5e-bits/5e-database src/2024/en -> srd/
   autocomplete (`wikiSuggest`).
 
 ## Pantheon tab
+- **For now the tab is a blank page** (owner, 2026-11-13): `views/pantheon/index.js` exports `BLANK = true`, so the
+  view only shows its title and the DM Screen hides "New god"; the sidebar icon is `sun`. The rest of this section
+  describes the pantheon for when `BLANK` goes back to false.
 - The gods from `References/pantheon-diagram-and-custom-gods-guide.md` (docs/pantheon-model.md): 14 aspects on three
   nested polygons (Material square, Mental hexagon, Temporal square); a being = one Temporal + 0–2 Mental + 0–2 Material,
   and that recipe is its rank (Absolute God, Major, Minor, Lesser, Angel; 688 possible). Pure model `model.js`
